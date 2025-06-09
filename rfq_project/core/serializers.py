@@ -1,30 +1,49 @@
 from rest_framework import serializers
-from .models import CustomUser,ClientAdminProfile,EndUserProfile
+from .models import CustomUser,ClientAdminProfile,EndUserProfile,Supplier,Commodity
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
-class ClientAdminProfileSerializer(serializers.ModelSerializer):
-    class Meta: 
-        model = ClientAdminProfile
-        fields = ['client_id','first_name','last_name','contact_number','client_org_address']
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
-class ClientAdminCreateSerializer(serializers.ModelSerializer):
-    client_admin_profile = ClientAdminProfileSerializer()
+class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
+    def validate(self, attrs):
+        # Print the username being used for authentication
+        print(f"Attempting to authenticate user: {attrs.get('username')}")
+        
+        data = super().validate(attrs)
+        
+        # Print the authenticated user's details
+        print(f"Successfully authenticated user: {self.user.username}")
+        print(f"User role: {self.user.role}")
+        
+        # Add custom claims
+        data['message'] = f"welcome {self.user.get_role_display()}"
+        data['role'] = self.user.role
+        data['username'] = self.user.username
+        return data
+# class ClientAdminProfileSerializer(serializers.ModelSerializer):
+#     class Meta: 
+#         model = ClientAdminProfile
+#         fields = ['client_id','first_name','last_name','contact_number','client_org_address']
 
-    class Meta:
-        model = CustomUser
-        fields = ['username','email','password','role','organization','client_admin_profile']
-        extra_kwargs = {
-            'password':{'write_only':True},
-            'role':{'read_only':True},
-            }
-    def create(self, validated_data):
-        profile_data = validated_data.pop('client_admin_profile')
-        password = validated_data.pop('password')
-        user = CustomUser(**validated_data)
-        user.set_password(password)
-        user.role = 'client_admin'
-        user.save()
-        ClientAdminProfile.objects.create(user=user,**profile_data)
-        return user
+# class ClientAdminCreateSerializer(serializers.ModelSerializer):
+#     client_admin_profile = ClientAdminProfileSerializer()
+
+#     class Meta:
+#         model = CustomUser
+#         fields = ['username','email','password','role','organization','client_admin_profile']
+#         extra_kwargs = {
+#             'password':{'write_only':True},
+#             'role':{'read_only':True},
+#             }
+#     def create(self, validated_data):
+#         profile_data = validated_data.pop('client_admin_profile')
+#         password = validated_data.pop('password')
+#         user = CustomUser(**validated_data)
+#         user.set_password(password)
+#         user.role = 'client_admin'
+#         user.save()
+#         ClientAdminProfile.objects.create(user=user,**profile_data)
+#         return user
         
             
 class CustomUserSerializer(serializers.ModelSerializer):
@@ -54,17 +73,47 @@ class EndUserCreateSerializer(serializers.ModelSerializer):
             'role':{'read_only':True},
         }
     def create(self, validated_data):   
-        profile_data = validated_data.pop('end_user_profile',None)
-        password = validated_data.pop('password',None)
+        profile_data = validated_data.pop('end_user_profile')
+        password = validated_data.pop('password')
         user = CustomUser(**validated_data)
         if password:
             user.set_password(password)
         user.role = 'end_user'
         user.save()
         if profile_data:
-            EndUserProfile.objects.create(user=user,**profile_data)
+            EndUserProfile.objects.create(user=user, **profile_data)
         return user
+    
+class SupplierSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Supplier
+        fields = ['supplier_code','supplier_name','supplier_address','city','country','country_code','incoterms','payment_terms','primary_contact_name','email_address','contact_number','gst']
 
 
+class SupplierCreateSerializer(serializers.ModelSerializer):
+    supplier_profile = SupplierSerializer
+
+    class Meta:
+        model = CustomUser
+        fields = ['username','email','password','role','organization','supplier_profile']
+        extra_kwargs = {
+            'password':{'write_only':True},
+            'role':{'read_only':True}
+        }
+    def create(self, validated_data):
+        profile_data = validated_data.pop('supplier_profile')
+        password = validated_data.pop('password')
+        user = CustomUser(**validated_data)
+        user.set_password(password)
+        user.role = 'supplier'
+        user.save()
+        Supplier.objects.create(user=user, **profile_data)
+        return user
+    
+##commodity serializer
+class CommoditySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Commodity
+        fields = ['id','commodity_code','commodity_name']
 
 
