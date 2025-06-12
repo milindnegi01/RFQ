@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import CustomUser,ClientAdminProfile,EndUserProfile,Supplier,Commodity
+from .models import CustomUser,ClientAdminProfile,EndUserProfile,Supplier,Commodity,RFQImportData,RFQManagement
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
@@ -71,17 +71,34 @@ class EndUserCreateSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             'password':{'write_only':True},
             'role':{'read_only':True},
+            'organization':{'read_only':True}
         }
     def create(self, validated_data):   
         profile_data = validated_data.pop('end_user_profile')
         password = validated_data.pop('password')
+        
+        # Get the client admin's organization from the request
+        client_admin = self.context['request'].user
+        validated_data['organization'] = client_admin.organization
+        
         user = CustomUser(**validated_data)
         if password:
             user.set_password(password)
         user.role = 'end_user'
         user.save()
+        
+        # Set the client admin relationship
+        user.client_admin = client_admin
+        user.save()
+        
         if profile_data:
-            EndUserProfile.objects.create(user=user, **profile_data)
+            EndUserProfile.objects.create(
+                user=user,
+                client_admin=client_admin.client_admin_profile,
+                organization=client_admin.organization,  # Set organization here too
+                password=user.password,
+                **profile_data
+            )
         return user
     
 class SupplierSerializer(serializers.ModelSerializer):
@@ -115,5 +132,19 @@ class CommoditySerializer(serializers.ModelSerializer):
     class Meta:
         model = Commodity
         fields = ['id','commodity_code','commodity_name']
+
+class RFQImportDataSerializer(serializers.ModelSerializer):
+    created_by_username = serializers.CharField(source='created_by.username', read_only=True)
+    created_by_organization = serializers.CharField(source='created_by.organization', read_only=True)
+    
+    class Meta:
+        model = RFQImportData
+        fields = '__all__'
+
+
+class RFQManagementSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = RFQManagement
+        fields = '__all__'
 
 

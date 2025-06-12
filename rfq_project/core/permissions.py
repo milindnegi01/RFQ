@@ -9,3 +9,6 @@ class isclientadmin(BasePermission):
             request.user.is_authenticated and 
             request.user.role == 'client_admin'
         )
+class isenduser(BasePermission):
+    def has_permission(self, request, view):
+        return request.user and request.user.is_authenticated and request.user.role == 'end_user'

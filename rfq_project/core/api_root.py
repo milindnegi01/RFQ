@@ -46,7 +46,17 @@ class CustomAPIRootView(APIView):
             ret['List Suppliers'] = request.build_absolute_uri(reverse('supplier-list'))
             ret['List Commodities'] = request.build_absolute_uri(reverse('list-commodities'))
             ret['Create Commodity'] = request.build_absolute_uri(reverse('create-commodity'))
+            # ret['List All RFQs'] = request.build_absolute_uri(reverse('rfq-import-list'))
+            ret['View End User RFQs'] = request.build_absolute_uri(reverse('clientadmin-view-rfq-imports')) 
+            ret['Create RFQ Management'] = request.build_absolute_uri(reverse('create-rfq-management'))
+            ret['List RFQ Management'] = request.build_absolute_uri(reverse('list-rfq-management'))
+
+
+        elif request.user.role == 'end_user':
+            ret['Create RFQ Entry'] = request.build_absolute_uri(reverse ('rfq-import-create'))
+            ret['List My RFQs'] = request.build_absolute_uri(reverse('rfq-import-list'))
+    
         else:
-            print(f"User role {request.user.role} is not client_admin")
+            print(f"User role {request.user.role} is not authorized admin")
             
         return Response(ret)

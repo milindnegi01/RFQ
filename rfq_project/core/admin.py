@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.db import models
 from django.utils.html import format_html
 from django.contrib.auth.admin import UserAdmin
-from .models import CustomUser, ClientAdminProfile, EndUserProfile, Supplier,Commodity
+from .models import CustomUser, ClientAdminProfile, EndUserProfile, Supplier,Commodity,RFQImportData
 
 class EndUserProfileInline(admin.StackedInline):
     model = EndUserProfile
@@ -113,28 +113,53 @@ class CustomUserAdmin(UserAdmin):
         # If this is a new user with role 'client_admin', create the profile
         if is_new: 
             if obj.role == 'client_admin':
-             ClientAdminProfile.objects.get_or_create(
-                user=obj,
-                defaults={
-                    'client_id': f"CA{obj.id}",  # Generate a client ID
-                    'first_name': obj.first_name,
-                    'last_name': obj.last_name,
-                    'contact_number': '',  # Default empty
-                    'client_org_address': obj.organization or ''  # Use organization as address
-                }
-            )
-        elif obj.role == 'end_user':
-            # Create end user profile first
-            end_user_profile, created = EndUserProfile.objects.get_or_create(
-                user=obj,
-                defaults={
-                    'first_name': obj.first_name,
-                    'last_name': obj.last_name,
-                    'contact_number': '',
-                    'organization': obj.organization
-                }
-            )
-        if obj.organization:
+                ClientAdminProfile.objects.get_or_create(
+                    user=obj,
+                    defaults={
+                        'client_id': f"CA{obj.id}",  # Generate a client ID
+                        'first_name': obj.first_name,
+                        'last_name': obj.last_name,
+                        'contact_number': '',  # Default empty
+                        'client_org_address': obj.organization or ''  # Use organization as address
+                    }
+                )
+            elif obj.role == 'end_user':
+                # Create end user profile only if it doesn't exist
+                if not hasattr(obj, 'end_user_profile'):
+                    EndUserProfile.objects.create(
+                        user=obj,
+                        first_name=obj.first_name,
+                        last_name=obj.last_name,
+                        contact_number='',
+                        organization=obj.organization,
+                        username=obj.username,
+                        email=obj.email,
+                        password=obj.password
+                    )
+            elif obj.role == 'supplier':
+                # Create supplier profile
+                Supplier.objects.get_or_create(
+                    user=obj,
+                    defaults={
+                        'supplier_code': f"SUP{obj.id}",
+                        'supplier_name': obj.organization or '',
+                        'supplier_address': '',
+                        'city': '',
+                        'state': '',
+                        'country': '',
+                        'country_code': '',
+                        'incoterms': '',
+                        'payment_terms': '',
+                        'primary_contact_name': obj.first_name,
+                        'email_address': obj.email,
+                        'contact_number': '',
+                        'gst': ''
+                    }
+                )
+        else:
+            # Handle updates for existing users
+            if obj.role == 'end_user' and obj.organization:
+                # Update client admin association
                 client_admin = CustomUser.objects.filter(
                     role='client_admin',
                     organization=obj.organization
@@ -142,50 +167,21 @@ class CustomUserAdmin(UserAdmin):
                 if client_admin:
                     obj.client_admin = client_admin
                     obj.save()
-                    
-                    # Update end user profile with organization info
-                    # end_user_profile = EndUserProfile.objects.get(user=obj)
-                    # end_user_profile.organization = obj.organization
-                    # end_user_profile.save()
+                
+                # Update end user profile if it exists
+                if hasattr(obj, 'end_user_profile'):
+                    obj.end_user_profile.organization = obj.organization
+                    obj.end_user_profile.save()
 
-        elif obj.role == 'supplier':
-            # Create supplier profile
-            Supplier.objects.get_or_create(
-                user=obj,
-                defaults={
-                    'supplier_code': f"SUP{obj.id}",
-                    'supplier_name': obj.organization or '',
-                    'supplier_address': '',
-                    'city': '',
-                    'state': '',
-                    'country': '',
-                    'country_code': '',
-                    'incoterms': '',
-                    'payment_terms': '',
-                    'primary_contact_name': obj.first_name,
-                    'email_address': obj.email,
-                    'contact_number': '',
-                    'gst': ''
-                }
-            )
-        else:
-        # Handle updates for existing users
-            if obj.role == 'end_user' and obj.organization:
-            # Update client admin association
-                client_admin = CustomUser.objects.filter(
-                    role='client_admin',
-                    organization=obj.organization
-                ).first()
+        if obj.organization:
+            client_admin = CustomUser.objects.filter(
+                role='client_admin',
+                organization=obj.organization
+            ).first()
             if client_admin:
                 obj.client_admin = client_admin
                 obj.save()
-            
-            # Update end user profile
-            if hasattr(obj, 'end_user_profile'):
-                obj.end_user_profile.organization = obj.organization
-                obj.end_user_profile.save()
-        
-        
+
     def get_queryset(self, request):
         qs = super().get_queryset(request)
         if request.user.role == 'client_admin':
@@ -276,6 +272,65 @@ class ClientAdminProfileAdmin(admin.ModelAdmin):
         if request.user.role == 'client_admin':
             return qs.filter(user=request.user)
         return qs
+    
+class RFQImportDataAdmin(admin.ModelAdmin):
+    list_display = ('title', 'client_pr_number', 'client_requestor_name', 'client_code', 'need_by_date', 'created_at')
+    list_filter = ('client_code', 'created_at', 'need_by_date')
+    search_fields = ('title', 'client_pr_number', 'client_requestor_name', 'client_code', 'description')
+    ordering = ('-created_at',)
+    readonly_fields = ('created_at',)
+    
+    fieldsets = (
+        ('Basic Information', {
+            'fields': ('title', 'client_pr_number', 'client_requestor_name', 'client_requestor_id', 'client_code')
+        }),
+        ('Shipping Details', {
+            'fields': ('shipping_address', 'need_by_date', 'Currency')
+        }),
+        ('Product Details', {
+            'fields': ('serial_no', 'description', 'supplier_part_number', 'drawing_number', 
+                      'commodity_code', 'uom', 'unit_price')
+        }),
+        ('Supplier Information', {
+            'fields': ('supplier_name', 'manufacturer_name', 'manufacturer_part_number')
+        }),
+        ('System Information', {
+            'fields': ('created_by', 'created_at')
+        }),
+    )
+
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        if request.user.role == 'client_admin':
+            # Show RFQs for the client admin's organization
+            return qs.filter(created_by__organization=request.user.organization)
+        elif request.user.role == 'end_user':
+            # Show only RFQs created by the end user
+            return qs.filter(created_by=request.user)
+        return qs
+
+    def has_add_permission(self, request):
+        # Only end users can create RFQs
+        return request.user.role == 'end_user'
+
+    def has_change_permission(self, request, obj=None):
+        if obj is None:
+            return True
+        # Only the creator or client admin can modify
+        return (obj.created_by == request.user or 
+                (request.user.role == 'client_admin' and 
+                 obj.created_by.organization == request.user.organization))
+
+    def has_delete_permission(self, request, obj=None):
+        if obj is None:
+            return True
+        # Only the creator or client admin can delete
+        return (obj.created_by == request.user or 
+                (request.user.role == 'client_admin' and 
+                 obj.created_by.organization == request.user.organization))
+
+# Add this line at the end of the file with the other registrations
+admin.site.register(RFQImportData, RFQImportDataAdmin)
 # Register your models with the custom admin class
 admin.site.register(CustomUser, CustomUserAdmin)
 admin.site.register(EndUserProfile, EndUserProfileAdmin)

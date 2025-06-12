@@ -54,7 +54,7 @@ class EndUserProfile(models.Model):
     client_admin = models.ForeignKey(ClientAdminProfile, on_delete=models.CASCADE, related_name='end_users', null=True, blank=True)
     username = models.CharField(max_length=255)  # Now required
     email = models.EmailField(null=True, blank=True)  # Keep email optional
-    password = models.CharField(max_length=255)  # Now required
+    password = models.CharField(max_length=255,help_text="Hashed password from CustomUser")  # Now required
 
     def __str__(self):
         return f"{self.first_name} {self.last_name} ({self.user.username if self.user else self.username})"
@@ -104,3 +104,88 @@ class Commodity(models.Model):
 
     def __str__(self):
         return f"{self.commodity_name}({self.commodity_code})"
+    
+##end - user
+class RFQImportData(models.Model):
+    created_by = models.ForeignKey(CustomUser , on_delete=models.CASCADE)
+    client_pr_number = models.CharField(max_length=100)
+    client_requestor_name = models.CharField(max_length=100)
+    client_requestor_id = models.CharField(max_length=100)
+    client_code = models.CharField(max_length=100)
+    title = models.CharField(max_length=100)
+    shipping_address = models.TextField(max_length=100)
+    Currency = models.CharField(max_length=100)
+    serial_no = models.CharField(max_length=100)
+    description = models.TextField()
+    need_by_date = models.DateField()
+    supplier_part_number = models.CharField(max_length=100)
+    drawing_number = models.CharField(max_length=100, blank=True, null=True)
+    commodity_code = models.CharField(max_length=50)
+    uom = models.CharField(max_length=50)  # Unit of Measure
+    unit_price = models.DecimalField(max_digits=12, decimal_places=2)
+    supplier_name = models.CharField(max_length=100)
+    manufacturer_name = models.CharField(max_length=100)
+    manufacturer_part_number = models.CharField(max_length=100)  
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.title 
+
+class RFQManagement(models.Model):
+    rfq_import = models.ForeignKey('RFQImportData', on_delete=models.CASCADE, related_name='rfq_management', null=True, blank=True)
+    client_pr_number = models.CharField(max_length=100)
+    client_requestor_name = models.CharField(max_length=100)
+    client_requestor_id = models.CharField(max_length=100)
+    client_item_code = models.CharField(max_length=100)
+    title = models.CharField(max_length=200)
+    shipping_address = models.TextField()
+    currency = models.CharField(max_length=20)
+    rfq_type = models.CharField(max_length=50)
+    assignee = models.CharField(max_length=100)
+    serial_number = models.IntegerField()
+    description = models.TextField()
+    need_by_date = models.DateField()
+    supplier_part_number = models.CharField(max_length=100)
+    commodity_code = models.CharField(max_length=100)
+    uom = models.CharField(max_length=20)
+    manufacturer_name = models.CharField(max_length=100)
+    manufacturer_part_number = models.CharField(max_length=100)
+    benchmark_price = models.FloatField()
+    rfq_status = models.CharField(max_length=100)
+    supplier_code = models.CharField(max_length=100)
+    supplier_name = models.CharField(max_length=100)
+    unit_price = models.FloatField()
+    lead_time = models.CharField(max_length=50)
+    inco_terms = models.CharField(max_length=50)
+    payment_terms = models.CharField(max_length=100)
+    freight = models.CharField(max_length=50)
+    alternative_part_number = models.CharField(max_length=100, blank=True, null=True)
+    comments = models.TextField(blank=True, null=True)
+    chat_box_comments = models.TextField(blank=True, null=True)
+    rfq_received_date = models.DateField(blank=True, null=True)
+    rfq_opened_date = models.DateField(blank=True, null=True)
+    rfq_closed_date = models.DateField(blank=True, null=True)
+    rfq_award_date = models.DateField(blank=True, null=True)
+    awarded_price = models.FloatField(blank=True, null=True)
+    rfq_archived_date = models.DateField(blank=True, null=True)
+    rfq_cancelled_date = models.DateField(blank=True, null=True)
+    reason_for_cancel = models.TextField(blank=True, null=True)
+    reason_for_archive = models.TextField(blank=True, null=True)
+    bidding_declined = models.CharField(max_length=50, blank=True, null=True)
+    rfq_reopened_date_1 = models.DateField(blank=True, null=True)
+    rfq_closed_date_1 = models.DateField(blank=True, null=True)
+    rfq_reopened_date_2 = models.DateField(blank=True, null=True)
+    rfq_closed_date_2 = models.DateField(blank=True, null=True)
+    rfq_reopened_date_3 = models.DateField(blank=True, null=True)
+    rfq_closed_date_3 = models.DateField(blank=True, null=True)
+    savings = models.FloatField(blank=True, null=True)
+    savings_percent = models.FloatField(blank=True, null=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.client_pr_number
+
+
+
