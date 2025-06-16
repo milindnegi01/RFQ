@@ -297,7 +297,7 @@ class AutoPromoteRFQView(APIView):
         rfq_import = get_object_or_404(RFQImportData, id=rfq_import_id)
 
         # Optional: Check if it’s already promoted
-        if RFQManagement.objectsfilter(rfq_import=rfq_import).exists():
+        if RFQManagement.objects.filter(rfq_import=rfq_import).exists():
             return Response({'error': 'This RFQ has already been promoted'}, status=status.HTTP_400_BAD_REQUEST)
 
         # Auto-copy values from RFQImportData into RFQManagementTable

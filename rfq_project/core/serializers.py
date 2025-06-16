@@ -146,5 +146,9 @@ class RFQManagementSerializer(serializers.ModelSerializer):
     class Meta:
         model = RFQManagement
         fields = '__all__'
+    
+    def create(self, validated_data):
+        # Auto-fill logic can go here if needed
+        return super().create(validated_data)
 
 

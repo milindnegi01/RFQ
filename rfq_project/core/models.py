@@ -133,7 +133,7 @@ class RFQImportData(models.Model):
         return self.title 
 
 class RFQManagement(models.Model):
-    rfq_import = models.ForeignKey('RFQImportData', on_delete=models.CASCADE, related_name='rfq_management', null=True, blank=True)
+    rfq_import = models.OneToOneField('RFQImportData', on_delete=models.CASCADE, related_name='rfq_management', null=True, blank=True)
     client_pr_number = models.CharField(max_length=100)
     client_requestor_name = models.CharField(max_length=100)
     client_requestor_id = models.CharField(max_length=100)
