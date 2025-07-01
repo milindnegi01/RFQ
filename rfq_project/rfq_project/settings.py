@@ -38,9 +38,10 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'core' ,
+    'core.apps.CoreConfig' ,
     'rest_framework', 
     'rest_framework.authtoken',
+    
 ]
 
 MIDDLEWARE = [
@@ -177,5 +178,13 @@ SIMPLE_JWT = {
     'AUTH_COOKIE_PATH': '/',
     'AUTH_COOKIE_SAMESITE': 'Lax',
 }
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
+EMAIL_HOST_USER = 'milindnegisecond@gmail.com'           # ✅ your Gmail
+EMAIL_HOST_PASSWORD = 'yrmpyqtljawzqhkf'                  # ✅ App password (remove spaces)
+EMAIL_USE_TLS = True
+DEFAULT_FROM_EMAIL = 'milindnegisecond@gmail.com'        # ✅ usually same as EMAIL_HOST_USER
+
 
 

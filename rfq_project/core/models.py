@@ -1,5 +1,7 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
+from django.utils import timezone
+import uuid
 
 
 class CustomUser(AbstractUser):
@@ -133,7 +135,14 @@ class RFQImportData(models.Model):
         return self.title 
 
 class RFQManagement(models.Model):
-    rfq_import = models.OneToOneField('RFQImportData', on_delete=models.CASCADE, related_name='rfq_management', null=True, blank=True)
+    STATUS_CHOICES = [
+        ('opened', 'Opened'),
+        ('closed', 'Closed'),
+        ('awarded', 'Awarded'),
+        ('cancelled', 'Cancelled'),
+        ('archived', 'Archived'),
+    ]
+    rfq_import = models.ForeignKey(RFQImportData, on_delete=models.CASCADE, related_name='rfq_management', null=True, blank=True)
     client_pr_number = models.CharField(max_length=100)
     client_requestor_name = models.CharField(max_length=100)
     client_requestor_id = models.CharField(max_length=100)
@@ -151,8 +160,8 @@ class RFQManagement(models.Model):
     uom = models.CharField(max_length=20)
     manufacturer_name = models.CharField(max_length=100)
     manufacturer_part_number = models.CharField(max_length=100)
-    benchmark_price = models.FloatField()
-    rfq_status = models.CharField(max_length=100)
+    benchmark_price = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='opened')
     supplier_code = models.CharField(max_length=100)
     supplier_name = models.CharField(max_length=100)
     unit_price = models.FloatField()
@@ -181,11 +190,89 @@ class RFQManagement(models.Model):
     rfq_closed_date_3 = models.DateField(blank=True, null=True)
     savings = models.FloatField(blank=True, null=True)
     savings_percent = models.FloatField(blank=True, null=True)
-
+    selected_suppliers = models.ManyToManyField(Supplier, blank=True, related_name='rfqs_assigned')
+    awarded_supplier = models.ForeignKey('Supplier', null=True, blank=True, on_delete=models.SET_NULL, related_name='awarded_rfqs')
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
         return self.client_pr_number
+
+    def save(self, *args, **kwargs):
+        # Automatically set status to 'awarded' if awarded_supplier is set
+        if self.awarded_supplier and self.status != 'awarded':
+            self.status = 'awarded'
+        super().save(*args, **kwargs)
+
+
+class RFQEvent(models.Model):
+    STATUS_CHOICES = [
+        ('draft', 'Draft'),
+        ('opened', 'Opened'),
+        ('closed', 'Closed'),
+        ('awarded', 'Awarded'),
+        ('cancelled', 'Cancelled'),
+        ('archived', 'Archived'),
+    ]
+
+    # Track both RFQImportData and RFQManagement
+    rfq_import = models.ForeignKey(RFQImportData, on_delete=models.CASCADE, related_name='events', null=True, blank=True)
+    rfq_management = models.ForeignKey(RFQManagement, on_delete=models.CASCADE, related_name='events', null=True, blank=True)
+    
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
+    supplier_responses = models.PositiveIntegerField(default=0)
+    last_updated = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [['rfq_import', 'rfq_management']]
+
+    def __str__(self):
+        if self.rfq_import:
+            return f"{self.rfq_import.title} - {self.status}"
+        elif self.rfq_management:
+            return f"{self.rfq_management.title} - {self.status}"
+        return f"RFQ Event - {self.status}"
+
+    @property
+    def rfq_title(self):
+        if self.rfq_import:
+            return self.rfq_import.title
+        elif self.rfq_management:
+            return self.rfq_management.title
+        return "Unknown RFQ"
+
+    @property
+    def client_pr_number(self):
+        if self.rfq_import:
+            return self.rfq_import.client_pr_number
+        elif self.rfq_management:
+            return self.rfq_management.client_pr_number
+        return "Unknown"
+
+    def update_supplier_responses(self):
+        """Update the supplier responses count based on selected suppliers"""
+        if self.rfq_management:
+            self.supplier_responses = self.rfq_management.selected_suppliers.count()
+            self.save()
+        return self.supplier_responses
+
+class SupplierResponseToken(models.Model):
+    supplier = models.ForeignKey(Supplier, on_delete=models.CASCADE)
+    rfq_import = models.ForeignKey(RFQImportData, on_delete=models.CASCADE)
+    token = models.UUIDField(default=uuid.uuid4, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    is_used = models.BooleanField(default=False)  # optional
+
+class SupplierResponse(models.Model):
+    rfq_import = models.ForeignKey(RFQImportData, on_delete=models.CASCADE, null=True, blank=True)
+    supplier = models.ForeignKey(Supplier, on_delete=models.CASCADE)
+    quoted_price = models.DecimalField(max_digits=12, decimal_places=2)
+    lead_time = models.CharField(max_length=100, blank=True, null=True)
+    comments = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('rfq_import', 'supplier')
 
 
 

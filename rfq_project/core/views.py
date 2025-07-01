@@ -1,8 +1,8 @@
 from rest_framework import generics
-from .models import CustomUser,Commodity,RFQImportData,RFQManagement,EndUserProfile, ClientAdminProfile
-from .serializers import CustomUserSerializer,EndUserCreateSerializer,SupplierCreateSerializer,CustomTokenObtainPairSerializer,CommoditySerializer,RFQImportDataSerializer,RFQManagementSerializer
+from .models import CustomUser,Commodity,RFQImportData,RFQManagement,EndUserProfile, ClientAdminProfile , RFQEvent ,Supplier,SupplierResponse,SupplierResponseToken
+from .serializers import CustomUserSerializer,EndUserCreateSerializer,SupplierCreateSerializer,SupplierSerializer,CustomTokenObtainPairSerializer,CommoditySerializer,RFQImportDataSerializer,RFQManagementSerializer,RFQExportSerializer,RFQEventSerializer
 from rest_framework.permissions import IsAuthenticated
-from .permissions import isclientadmin,isenduser
+from .permissions import isclientadmin,isenduser , IsAnonymous
 from rest_framework import filters,status
 from rest_framework.response import Response
 from rest_framework_simplejwt.views import TokenObtainPairView,TokenRefreshView,TokenVerifyView
@@ -12,9 +12,16 @@ from django.conf import settings
 from django.urls import reverse
 from django.contrib.auth import authenticate
 from django.http import HttpResponseRedirect
-from django.shortcuts import get_object_or_404
+from django.shortcuts import get_object_or_404, redirect, render
 import logging
 logger = logging.getLogger(__name__)
+from core.utils.email_utils import send_rfq_email_to_supplier
+from django.db import models
+from rest_framework import serializers
+from jwt.exceptions import InvalidTokenError, ExpiredSignatureError
+import jwt
+from rest_framework.decorators import action
+
 
 class CookieTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
@@ -130,11 +137,11 @@ class ListEndUserView(generics.ListAPIView):
         )
 
 class ListSupplierView(generics.ListAPIView):
-    serializer_class = CustomUserSerializer
+    serializer_class = SupplierSerializer
     permission_classes = [IsAuthenticated,isclientadmin]
 
     def get_queryset(self):
-        return CustomUser.objects.filter(role='supplier')
+        return Supplier.objects.all()
     
 ##client admin crud operations
 class RetrieveEndUserView(generics.RetrieveAPIView):
@@ -180,9 +187,9 @@ class OrganizationUserListView(generics.ListAPIView):
         return CustomUser.objects.filter(organization=org,role__in=['client_admin','supplier','end_user'])
 
 
-# from django.shortcuts import render
-# def login(request):
-#     return render(request,'login.html')
+# Add this login view to handle redirect for authenticated users
+def login(request):
+    pass  # Remove or comment out this function
 
 ##master admin and client admin can manage commodities 
 class CreateCommodityView(generics.CreateAPIView):
@@ -270,11 +277,93 @@ class ClientAdminRFQImportView(APIView):
 
         serializer = RFQImportDataSerializer(rfqs, many=True)
         return Response(serializer.data)
-    
+
+# --- NEW VIEW: RFQPromotionView ---
+class RFQPromotionView(APIView):
+    permission_classes = [IsAuthenticated, isclientadmin]
+
+    class InputSerializer(serializers.Serializer):
+        rfq_import_id = serializers.IntegerField()
+        supplier_ids = serializers.ListField(
+            child=serializers.IntegerField(), required=False
+        )
+
+    def post(self, request):
+        serializer = self.InputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        rfq_import_id = serializer.validated_data['rfq_import_id']
+        supplier_ids = serializer.validated_data.get('supplier_ids', [])
+
+        # Get RFQImportData instance
+        try:
+            rfq_import = RFQImportData.objects.get(id=rfq_import_id)
+        except RFQImportData.DoesNotExist:
+            return Response({'error': 'RFQImportData not found'}, status=404)
+
+        # Authorization check
+        if rfq_import.created_by.organization != request.user.organization:
+            return Response({'error': 'Not authorized to promote this RFQ'}, status=403)
+
+        # Get or create the draft event for this RFQImportData
+        rfq_event, created = RFQEvent.objects.get_or_create(
+            rfq_import=rfq_import,
+            defaults={'status': 'opened'}
+        )
+        if not created:
+            rfq_event.status = 'opened'
+            rfq_event.save()
+
+        # Assign suppliers (if you want to store them, you need a M2M field on RFQEvent or RFQImportData)
+        from core.models import Supplier
+        suppliers = Supplier.objects.filter(id__in=supplier_ids)
+        # If you want to store suppliers on the event, you need to add a M2M field to RFQEvent. For now, just send emails.
+        for supplier in suppliers:
+            if supplier.email_address:
+                # Create or get an RFQManagement instance for this supplier and rfq_import
+                rfq_management, _ = RFQManagement.objects.get_or_create(
+                    rfq_import=rfq_import,
+                    supplier_name=supplier.supplier_name,
+                    supplier_code=supplier.supplier_code,
+                    client_pr_number=rfq_import.client_pr_number,
+                    client_requestor_name=rfq_import.client_requestor_name,
+                    client_requestor_id=rfq_import.client_requestor_id,
+                    client_item_code="N/A",  # or appropriate value
+                    title=rfq_import.title,
+                    shipping_address=rfq_import.shipping_address,
+                    currency=rfq_import.Currency,
+                    rfq_type="N/A",  # or appropriate value
+                    assignee="N/A",  # or appropriate value
+                    serial_number=int(rfq_import.serial_no) if str(rfq_import.serial_no).isdigit() else 1,
+                    description=rfq_import.description,
+                    need_by_date=rfq_import.need_by_date,
+                    supplier_part_number=rfq_import.supplier_part_number,
+                    commodity_code=rfq_import.commodity_code,
+                    uom=rfq_import.uom,
+                    manufacturer_name=rfq_import.manufacturer_name,
+                    manufacturer_part_number=rfq_import.manufacturer_part_number,
+                    unit_price=float(rfq_import.unit_price),
+                    lead_time="",
+                    inco_terms="",
+                    payment_terms="",
+                    freight="",
+                )
+                send_rfq_email_to_supplier(rfq_import, supplier)
+                
+        return Response({'status': 'RFQ promoted and emails sent.'}, status=200)
 class RFQManagementCreateView(generics.CreateAPIView):
     queryset = RFQManagement.objects.all()
-    serializer_class = RFQManagementSerializer
+    serializer_class = RFQManagementSerializer  # ✅ Make sure this line is present
     permission_classes = [IsAuthenticated, isclientadmin]
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        # Now the instance is saved, and M2M fields are set
+        instance = serializer.instance
+        # send_rfq_email_to_supplier(instance)
+        # headers = self.get_success_headers(serializer.data)
+        # return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
 class RFQManagementListView(generics.ListAPIView):
     queryset = RFQManagement.objects.all()
@@ -285,39 +374,215 @@ class RFQManagementDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = RFQManagement.objects.all()
     serializer_class = RFQManagementSerializer
     permission_classes = [IsAuthenticated, isclientadmin]
-class AutoPromoteRFQView(APIView):
+
+class CancelRFQView(APIView):
     permission_classes = [IsAuthenticated, isclientadmin]
 
-    def post(self, request, *args, **kwargs):
-        rfq_import_id = request.data.get('rfq_import')
+    def post(self, request, pk):
+        rfq = get_object_or_404(RFQManagement, pk=pk)
+        rfq.status = 'cancelled'
+        rfq.save()
+        return Response({'status': 'cancelled'}, status=status.HTTP_200_OK)
 
-        if not rfq_import_id:
-            return Response({'error': 'rfq_import ID is required'}, status=status.HTTP_400_BAD_REQUEST)
+class ArchiveRFQView(APIView):
+    permission_classes = [IsAuthenticated, isclientadmin]
 
-        rfq_import = get_object_or_404(RFQImportData, id=rfq_import_id)
+    def post(self, request, pk):
+        rfq = get_object_or_404(RFQManagement, pk=pk)
+        rfq.status = 'archived'
+        rfq.save()
+        return Response({'status': 'archived'}, status=status.HTTP_200_OK)
 
-        # Optional: Check if it’s already promoted
-        if RFQManagement.objects.filter(rfq_import=rfq_import).exists():
-            return Response({'error': 'This RFQ has already been promoted'}, status=status.HTTP_400_BAD_REQUEST)
+class RFQEventListView(generics.ListAPIView):
+    serializer_class = RFQEventSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        user = self.request.user
+        
+        if user.role == 'client_admin':
+            # Client admin sees all RFQ events from their organization
+            return RFQEvent.objects.filter(
+                models.Q(rfq_import__created_by__organization=user.organization) |
+                models.Q(rfq_management__rfq_import__created_by__organization=user.organization)
+            ).select_related('rfq_import', 'rfq_management', 'rfq_import__created_by', 'rfq_management__rfq_import__created_by')
+        
+        elif user.role == 'end_user':
+            # End user sees only their own RFQ events
+            return RFQEvent.objects.filter(
+                models.Q(rfq_import__created_by=user) |
+                models.Q(rfq_management__rfq_import__created_by=user)
+            ).select_related('rfq_import', 'rfq_management', 'rfq_import__created_by', 'rfq_management__rfq_import__created_by')
+        
+        else:
+            # Other roles see no events
+            return RFQEvent.objects.none()
 
-        # Auto-copy values from RFQImportData into RFQManagementTable
-        rfq_management = RFQManagement.objects.create(
-            rfq_import=rfq_import,
-            title=rfq_import.title,
-            client_pr_number=rfq_import.client_pr_number,
-            client_requestor_name=rfq_import.client_requestor_name,
-            client_requestor_id=rfq_import.client_requestor_id,
-            shipping_address=rfq_import.shipping_address,
-            currency=rfq_import.currency,
-            commodity_code=rfq_import.commodity_code,
-            supplier_name=rfq_import.supplier_name,
-            manufacturer_name=rfq_import.manufacturer_name,
-            manufacturer_part_number=rfq_import.manufacturer_part_number,
-            description=rfq_import.description,
-            unit_price=rfq_import.unit_price,
-            need_by_date=rfq_import.need_by_date,
-            # Add more fields if needed
+class RFQEventDetailView(generics.RetrieveAPIView):
+    serializer_class = RFQEventSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        user = self.request.user
+        
+        if user.role == 'client_admin':
+            return RFQEvent.objects.filter(
+                models.Q(rfq_import__created_by__organization=user.organization) |
+                models.Q(rfq_management__rfq_import__created_by__organization=user.organization)
+            ).select_related('rfq_import', 'rfq_management', 'rfq_import__created_by', 'rfq_management__rfq_import__created_by')
+        
+        elif user.role == 'end_user':
+            return RFQEvent.objects.filter(
+                models.Q(rfq_import__created_by=user) |
+                models.Q(rfq_management__rfq_import__created_by=user)
+            ).select_related('rfq_import', 'rfq_management', 'rfq_import__created_by', 'rfq_management__rfq_import__created_by')
+        
+        else:
+            return RFQEvent.objects.none()
+
+class RFQExportView(APIView):
+    permission_classes = [IsAuthenticated,isclientadmin]
+
+    def get(self,request,*args,**kwargs):
+        rfqs = RFQManagement.objects.filter(rfq_status = 'closed')
+        serializer = RFQExportSerializer(rfqs, many=True)
+        return Response(serializer.data)
+    
+###################################################################################
+from django.shortcuts import render
+from django.views import View
+from django.http import HttpResponse
+
+class SupplierResponseFormView(View):
+    def get(self, request, token):
+        try:
+            token_obj = SupplierResponseToken.objects.get(token=token)
+        except SupplierResponseToken.DoesNotExist:
+            return HttpResponse("Invalid or expired token", status=400)
+
+        return render(request, 'supplier_response_form.html', {
+            'token': token
+        })
+
+    def post(self, request, token):
+        try:
+            token_obj = SupplierResponseToken.objects.get(token=token)
+        except SupplierResponseToken.DoesNotExist:
+            return HttpResponse("Invalid or expired token", status=400)
+
+        supplier = token_obj.supplier
+        rfq = token_obj.rfq_import
+
+        if SupplierResponse.objects.filter(rfq_import=rfq, supplier=supplier).exists():
+            return HttpResponse("You have already submitted your response.", status=400)
+
+        quoted_price = request.POST.get('quoted_price')
+        lead_time = request.POST.get('lead_time')
+        comments = request.POST.get('comments')
+
+        SupplierResponse.objects.create(
+            rfq_import=rfq,
+            supplier=supplier,
+            quoted_price=quoted_price,
+            lead_time=lead_time,
+            comments=comments
         )
 
-        serializer = RFQManagementSerializer(rfq_management)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        # Update RFQEvent supplier count
+        event = RFQEvent.objects.get(rfq_import=rfq)
+        event.supplier_responses = SupplierResponse.objects.filter(rfq_import=rfq).count()
+        event.save()
+
+        token_obj.is_used = True
+        token_obj.save()
+
+        return HttpResponse("Your response has been submitted successfully!")
+
+# --- NEW: SupplierResponse Serializer ---
+class SupplierResponseSerializer(serializers.ModelSerializer):
+    supplier_name = serializers.CharField(source='supplier.supplier_name', read_only=True)
+    supplier_code = serializers.CharField(source='supplier.supplier_code', read_only=True)
+    class Meta:
+        model = SupplierResponse
+        fields = ['id', 'rfq_import', 'supplier', 'supplier_name', 'supplier_code', 'quoted_price', 'lead_time', 'comments', 'created_at']
+
+# --- NEW: View all supplier responses for a specific RFQImportData ---
+class SupplierResponseListByRFQView(generics.ListAPIView):
+    serializer_class = SupplierResponseSerializer
+    permission_classes = [IsAuthenticated, isclientadmin]
+
+    def get_queryset(self):
+        rfq_import_id = self.kwargs['rfq_import_id']
+        # Only allow client admins to view responses for RFQs in their org
+        rfq = get_object_or_404(RFQImportData, id=rfq_import_id, created_by__organization=self.request.user.organization)
+        return SupplierResponse.objects.filter(rfq_import=rfq)
+
+# --- NEW: Award a supplier for an RFQImportData ---
+class AwardSupplierView(APIView):
+    permission_classes = [IsAuthenticated, isclientadmin]
+
+    class InputSerializer(serializers.Serializer):
+        rfq_import_id = serializers.IntegerField()
+        supplier_id = serializers.IntegerField()
+
+    def post(self, request):
+        serializer = self.InputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        rfq_import_id = serializer.validated_data['rfq_import_id']
+        supplier_id = serializer.validated_data['supplier_id']
+
+        rfq_import = get_object_or_404(RFQImportData, id=rfq_import_id, created_by__organization=request.user.organization)
+        supplier = get_object_or_404(Supplier, id=supplier_id)
+
+        # Find or create the RFQManagement for this supplier and RFQImportData
+        rfq_management = RFQManagement.objects.filter(rfq_import=rfq_import, supplier_code=supplier.supplier_code).first()
+        if not rfq_management:
+            return Response({'error': 'No RFQManagement found for this supplier and RFQ.'}, status=404)
+
+        # Set awarded_supplier and status
+        rfq_management.awarded_supplier = supplier
+        rfq_management.status = 'awarded'
+        rfq_management.save()
+
+        # Update the RFQEvent status to 'awarded'
+        try:
+            event = RFQEvent.objects.get(rfq_import=rfq_import)
+            event.status = 'awarded'
+            event.save()
+        except RFQEvent.DoesNotExist:
+            pass
+
+        return Response({'status': 'Supplier awarded and RFQ marked as awarded.'}, status=200)
+
+# --- NEW: RFQ with Supplier Responses View ---
+class RFQWithResponsesView(generics.ListAPIView):
+    permission_classes = [IsAuthenticated, isclientadmin]
+    
+    class RFQWithResponsesSerializer(serializers.ModelSerializer):
+        supplier_responses = serializers.SerializerMethodField()
+        
+        class Meta:
+            model = RFQImportData
+            fields = ['id', 'title', 'client_pr_number', 'description', 'need_by_date', 'supplier_responses']
+        
+        def get_supplier_responses(self, obj):
+            responses = SupplierResponse.objects.filter(rfq_import=obj)
+            return [{
+                'id': resp.id,
+                'supplier_id': resp.supplier.id,
+                'supplier_name': resp.supplier.supplier_name,
+                'supplier_code': resp.supplier.supplier_code,
+                'quoted_price': str(resp.quoted_price),
+                'lead_time': resp.lead_time,
+                'comments': resp.comments,
+                'created_at': resp.created_at
+            } for resp in responses]
+    
+    serializer_class = RFQWithResponsesSerializer
+    
+    def get_queryset(self):
+        # Get RFQs from client admin's organization that have supplier responses
+        return RFQImportData.objects.filter(
+            created_by__organization=self.request.user.organization,
+            supplierresponse__isnull=False
+        ).distinct()

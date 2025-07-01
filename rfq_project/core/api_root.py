@@ -50,11 +50,24 @@ class CustomAPIRootView(APIView):
             ret['View End User RFQs'] = request.build_absolute_uri(reverse('clientadmin-view-rfq-imports')) 
             ret['Create RFQ Management'] = request.build_absolute_uri(reverse('create-rfq-management'))
             ret['List RFQ Management'] = request.build_absolute_uri(reverse('list-rfq-management'))
-
+            ret['Promote RFQ'] = request.build_absolute_uri(reverse('rfq-promote'))
+            ret['Export Final RFQs'] = request.build_absolute_uri(reverse('rfq_export'))
+            ret['RFQ Events'] = request.build_absolute_uri(reverse('rfq-events'))
+            # NEW: Simplified RFQ responses view
+            ret['Review and Award RFQ Responses'] = request.build_absolute_uri(reverse('rfq-with-responses'))
+            ret['Award RFQ to Supplier'] = request.build_absolute_uri(reverse('rfq-award-supplier'))
+            # For dynamic endpoints, provide the base URL and the required parameter info
+            base_url = request.build_absolute_uri('/api/rfq/')
+            # ret['View RFQ Supplier Responses'] = {
+            #     'pattern': request.build_absolute_uri('/api/rfq/{rfq_import_id}/supplier-responses/'),
+            #     'description': 'Replace {rfq_import_id} with the actual RFQ ID to view its supplier responses',
+            #     'method': 'GET'
+            # }
 
         elif request.user.role == 'end_user':
             ret['Create RFQ Entry'] = request.build_absolute_uri(reverse ('rfq-import-create'))
             ret['List My RFQs'] = request.build_absolute_uri(reverse('rfq-import-list'))
+            ret['RFQ Events'] = request.build_absolute_uri(reverse('rfq-events'))
     
         else:
             print(f"User role {request.user.role} is not authorized admin")

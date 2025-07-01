@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>RFQ Response Form</title>
+</head>
+<body>
+    <h2>Submit Your RFQ Response</h2>
+    <form method="POST">
+        {% csrf_token %}
+        <label>Quoted Price:</label><br>
+        <input type="number" step="0.01" name="quoted_price" required><br><br>
+
+        <label>Lead Time:</label><br>
+        <input type="text" name="lead_time"><br><br>
+
+        <label>Comments:</label><br>
+        <textarea name="comments"></textarea><br><br>
+
+        <input type="submit" value="Submit Response">
+    </form>
+</body>
+</html>

@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.db import models
 from django.utils.html import format_html
 from django.contrib.auth.admin import UserAdmin
-from .models import CustomUser, ClientAdminProfile, EndUserProfile, Supplier,Commodity,RFQImportData
+from .models import CustomUser, ClientAdminProfile, EndUserProfile, Supplier,Commodity,RFQImportData,RFQEvent
 
 class EndUserProfileInline(admin.StackedInline):
     model = EndUserProfile
@@ -328,6 +328,51 @@ class RFQImportDataAdmin(admin.ModelAdmin):
         return (obj.created_by == request.user or 
                 (request.user.role == 'client_admin' and 
                  obj.created_by.organization == request.user.organization))
+    
+@admin.register(RFQEvent)
+class RFQEventAdmin(admin.ModelAdmin):
+    list_display = ['get_rfq_title', 'get_client_pr_number', 'status', 'supplier_responses', 'last_updated']
+    list_filter = ['status', 'created_at', 'last_updated']
+    search_fields = ['rfq_import__title', 'rfq_management__title', 'rfq_import__client_pr_number', 'rfq_management__client_pr_number']
+    readonly_fields = ['created_at', 'last_updated']
+    
+    fieldsets = (
+        ('RFQ Information', {
+            'fields': ('rfq_import', 'rfq_management')
+        }),
+        ('Event Details', {
+            'fields': ('status', 'supplier_responses')
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'last_updated')
+        }),
+    )
+
+    def get_rfq_title(self, obj):
+        return obj.rfq_title
+    get_rfq_title.short_description = 'RFQ Title'
+    get_rfq_title.admin_order_field = 'rfq_import__title'
+
+    def get_client_pr_number(self, obj):
+        return obj.client_pr_number
+    get_client_pr_number.short_description = 'Client PR Number'
+    get_client_pr_number.admin_order_field = 'rfq_import__client_pr_number'
+
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        if request.user.role == 'client_admin':
+            # Show RFQ events for the client admin's organization
+            return qs.filter(
+                models.Q(rfq_import__created_by__organization=request.user.organization) |
+                models.Q(rfq_management__rfq_import__created_by__organization=request.user.organization)
+            )
+        elif request.user.role == 'end_user':
+            # Show only RFQ events created by the end user
+            return qs.filter(
+                models.Q(rfq_import__created_by=request.user) |
+                models.Q(rfq_management__rfq_import__created_by=request.user)
+            )
+        return qs
 
 # Add this line at the end of the file with the other registrations
 admin.site.register(RFQImportData, RFQImportDataAdmin)
