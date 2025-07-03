@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Purchase Order</title>
+</head>
+<body>
+    <h2>Purchase Order</h2>
+    <p>Dear {{ supplier.supplier_name }},</p>
+    <p>You have been awarded the following RFQ:</p>
+    <ul>
+        <li><strong>Title:</strong> {{ rfq.title }}</li>
+        <li><strong>PR Number:</strong> {{ rfq.client_pr_number }}</li>
+        <li><strong>Description:</strong> {{ rfq.description }}</li>
+        <li><strong>Need By Date:</strong> {{ rfq.need_by_date }}</li>
+        <li><strong>Unit Price:</strong> {{ rfq_management.unit_price }}</li>
+        <!-- Add more fields as needed -->
+    </ul>
+    <p>Please proceed with the order fulfillment.</p>
+    <p>Best regards,<br>{{ rfq.created_by.organization }}</p>
+</body>
+</html>

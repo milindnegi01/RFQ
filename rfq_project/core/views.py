@@ -21,6 +21,7 @@ from rest_framework import serializers
 from jwt.exceptions import InvalidTokenError, ExpiredSignatureError
 import jwt
 from rest_framework.decorators import action
+from core.utils.email_utils import send_award_email_with_order
 
 
 class CookieTokenObtainPairView(TokenObtainPairView):
@@ -228,6 +229,7 @@ class CreateRFQImportView(generics.CreateAPIView):
         print(f"User organization: {self.request.user.organization}")
         
         rfq = serializer.save(created_by=self.request.user)
+        
         print(f"Created RFQ with ID: {rfq.id}")
         print(f"RFQ organization: {rfq.created_by.organization}")
 
@@ -235,7 +237,7 @@ class ListRFQImportView(generics.ListAPIView):
     serializer_class = RFQImportDataSerializer
     permission_classes = [IsAuthenticated, isenduser]
 
-    def get_queryset(self):
+    def get_queryset(self):  
         print(f"Listing RFQs for user: {self.request.user.username}")
         print(f"User role: {self.request.user.role}")
         print(f"User organization: {self.request.user.organization}")
@@ -518,6 +520,10 @@ class SupplierResponseListByRFQView(generics.ListAPIView):
         return SupplierResponse.objects.filter(rfq_import=rfq)
 
 # --- NEW: Award a supplier for an RFQImportData ---
+
+from core.utils.email_utils import send_award_email_to_supplier
+
+
 class AwardSupplierView(APIView):
     permission_classes = [IsAuthenticated, isclientadmin]
 
@@ -552,8 +558,10 @@ class AwardSupplierView(APIView):
         except RFQEvent.DoesNotExist:
             pass
 
-        return Response({'status': 'Supplier awarded and RFQ marked as awarded.'}, status=200)
+        # --- Send award email to supplier ---
+        send_award_email_with_order(rfq_import, supplier, rfq_management)
 
+        return Response({'status': 'Supplier awarded and RFQ marked as awarded.'}, status=200)
 # --- NEW: RFQ with Supplier Responses View ---
 class RFQWithResponsesView(generics.ListAPIView):
     permission_classes = [IsAuthenticated, isclientadmin]
