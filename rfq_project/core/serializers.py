@@ -104,12 +104,15 @@ class EndUserCreateSerializer(serializers.ModelSerializer):
 class SupplierSerializer(serializers.ModelSerializer):
     user_id = serializers.IntegerField(source='user.id', read_only=True)
     username = serializers.CharField(source='user.username', read_only=True)
+    commodities = serializers.PrimaryKeyRelatedField(
+        queryset=Commodity.objects.all(), many=True, required=False
+    )
     class Meta:
         model = Supplier
         fields = [
             'id', 'user_id', 'username',
             'supplier_code','supplier_name','supplier_address','city','country','country_code',
-            'incoterms','payment_terms','primary_contact_name','email_address','contact_number','gst'
+            'incoterms','payment_terms','primary_contact_name','email_address','contact_number','gst','commodities'
         ]
 
 
@@ -118,19 +121,24 @@ class SupplierCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CustomUser
-        fields = ['username','email','password','role','organization','supplier_profile']
+        fields = ['username', 'email', 'password', 'supplier_profile']
         extra_kwargs = {
-            'password':{'write_only':True},
-            'role':{'read_only':True}
+            'password': {'write_only': True}
         }
     def create(self, validated_data):
         profile_data = validated_data.pop('supplier_profile')
-        password = validated_data.pop('password')
-        user = CustomUser(**validated_data)
-        user.set_password(password)
-        user.role = 'supplier'
-        user.save()
-        Supplier.objects.create(user=user, **profile_data)
+        commodities = profile_data.pop('commodities', [])
+        username = validated_data.get('username')
+        email = validated_data.get('email')
+        password = validated_data.get('password')
+        user = CustomUser.objects.create_user(
+            username=username,
+            email=email,
+            password=password,
+            role='supplier',
+        )
+        supplier = Supplier.objects.create(user=user, **profile_data)
+        supplier.commodities.set(commodities)
         return user
     
 ##commodity serializer

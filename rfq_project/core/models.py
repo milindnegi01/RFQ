@@ -74,6 +74,7 @@ class Supplier(models.Model):
     primary_contact_name = models.CharField(max_length=255)
     email_address = models.EmailField()
     contact_number = models.CharField(max_length=20)
+    commodities = models.ManyToManyField('Commodity', related_name='suppliers', blank=True)
     gst = models.CharField(max_length=50)
     def __str__(self):
         return f"{self.supplier_name} ({self.supplier_code})"
@@ -99,9 +100,11 @@ class Migration(migrations.Migration):
         migrations.RunPython(set_default_credentials),
     ]
 ##commodity list models
+# models.py
 class Commodity(models.Model):
-    commodity_code = models.CharField(max_length=50, unique = True)
+    commodity_code = models.CharField(max_length=50, unique=True)
     commodity_name = models.CharField(max_length=225)
+    # suppliers = models.ManyToManyField('Supplier', related_name='commodities', blank=True)  # NEW
 
     def __str__(self):
         return f"{self.commodity_name}({self.commodity_code})"

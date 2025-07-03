@@ -317,7 +317,12 @@ class RFQPromotionView(APIView):
 
         # Assign suppliers (if you want to store them, you need a M2M field on RFQEvent or RFQImportData)
         from core.models import Supplier
-        suppliers = Supplier.objects.filter(id__in=supplier_ids)
+        if not supplier_ids:
+            # Auto-select suppliers for the commodity
+            commodity = Commodity.objects.get(commodity_code=rfq_import.commodity_code)
+            suppliers = commodity.suppliers.all()
+        else:
+            suppliers = Supplier.objects.filter(id__in=supplier_ids)
         # If you want to store suppliers on the event, you need to add a M2M field to RFQEvent. For now, just send emails.
         for supplier in suppliers:
             if supplier.email_address:
